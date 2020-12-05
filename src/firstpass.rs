@@ -67,7 +67,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         }
 
         if self.options.contains(Options::ENABLE_FOOTNOTES) {
-            // finish footnote if it's still open and was preceeded by blank line
+            // finish footnote if it's still open and was preceded by blank line
             if let Some(node_ix) = self.tree.peek_up() {
                 if let ItemBody::FootnoteDefinition(..) = self.tree[node_ix].item.body {
                     if self.last_line_blank {

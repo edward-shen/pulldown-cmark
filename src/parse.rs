@@ -22,8 +22,8 @@
 
 use std::cmp::{max, min};
 use std::collections::{HashMap, VecDeque};
-use std::ops::{Index, Range};
 use std::iter::FusedIterator;
+use std::ops::{Index, Range};
 
 use unicase::UniCase;
 
@@ -1256,7 +1256,7 @@ impl<'a> Index<AlignmentIndex> for Allocations<'a> {
 
 /// A struct containing information on the reachability of certain inline HTML
 /// elements. In particular, for cdata elements (`<![CDATA[`), processing
-/// elements (`<?`) and declarations (`<!DECLARATION`). The respectives usizes
+/// elements (`<?`) and declarations (`<!DECLARATION`). The respective usizes
 /// represent the indices before which a scan will always fail and can hence
 /// be skipped.
 #[derive(Clone, Default)]
