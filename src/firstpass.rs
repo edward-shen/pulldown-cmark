@@ -4,7 +4,7 @@
 use std::cmp::max;
 
 use crate::linklabel::{scan_link_label_rest, LinkLabel};
-use crate::parse::{scan_containers, Allocations, Item, ItemBody, LinkDef};
+use crate::parse::{Allocations, Item, ItemBody, LinkDef};
 use crate::scanners::*;
 use crate::strings::CowStr;
 use crate::tree::{Tree, TreeIndex};
@@ -61,7 +61,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         let bytes = self.text.as_bytes();
         let mut line_start = LineStart::new(&bytes[start_ix..]);
 
-        let i = scan_containers(&self.tree, &mut line_start);
+        let i = self.tree.scan_containers(&mut line_start);
         for _ in i..self.tree.spine_len() {
             self.pop(start_ix);
         }
@@ -292,7 +292,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
     fn parse_table_row(&mut self, mut ix: usize, row_cells: usize) -> Option<(usize, TreeIndex)> {
         let bytes = self.text.as_bytes();
         let mut line_start = LineStart::new(&bytes[ix..]);
-        let containers = scan_containers(&self.tree, &mut line_start);
+        let containers = self.tree.scan_containers(&mut line_start);
         if containers != self.tree.spine_len() {
             return None;
         }
@@ -343,7 +343,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
 
             ix = next_ix;
             let mut line_start = LineStart::new(&bytes[ix..]);
-            let n_containers = scan_containers(&self.tree, &mut line_start);
+            let n_containers = self.tree.scan_containers(&mut line_start);
             if !line_start.scan_space(4) {
                 let ix_new = ix + line_start.bytes_scanned();
                 if n_containers == self.tree.spine_len() {
@@ -422,8 +422,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                             // check if we may be parsing a table
                             let next_line_ix = ix + eol_bytes;
                             let mut line_start = LineStart::new(&bytes[next_line_ix..]);
-                            if scan_containers(&self.tree, &mut line_start) == self.tree.spine_len()
-                            {
+                            if self.tree.scan_containers(&mut line_start) == self.tree.spine_len() {
                                 let table_head_ix = next_line_ix + line_start.bytes_scanned();
                                 let (table_head_bytes, alignment) =
                                     scan_table_head(&bytes[table_head_ix..]);
@@ -716,7 +715,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             self.append_html_line(remaining_space, line_start_ix, ix);
 
             let mut line_start = LineStart::new(&bytes[ix..]);
-            let n_containers = scan_containers(&self.tree, &mut line_start);
+            let n_containers = self.tree.scan_containers(&mut line_start);
             if n_containers < self.tree.spine_len() {
                 break;
             }
@@ -751,7 +750,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             self.append_html_line(remaining_space, line_start_ix, ix);
 
             let mut line_start = LineStart::new(&bytes[ix..]);
-            let n_containers = scan_containers(&self.tree, &mut line_start);
+            let n_containers = self.tree.scan_containers(&mut line_start);
             if n_containers < self.tree.spine_len() || line_start.is_at_eol() {
                 break;
             }
@@ -794,7 +793,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
             }
 
             let mut line_start = LineStart::new(&bytes[ix..]);
-            let n_containers = scan_containers(&self.tree, &mut line_start);
+            let n_containers = self.tree.scan_containers(&mut line_start);
             if n_containers < self.tree.spine_len()
                 || !(line_start.scan_space(4) || line_start.is_at_eol())
             {
@@ -841,7 +840,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
         self.tree.push();
         loop {
             let mut line_start = LineStart::new(&bytes[ix..]);
-            let n_containers = scan_containers(&self.tree, &mut line_start);
+            let n_containers = self.tree.scan_containers(&mut line_start);
             if n_containers < self.tree.spine_len() {
                 break;
             }
@@ -1063,7 +1062,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
     fn parse_refdef_label(&self, start: usize) -> Option<(usize, CowStr<'a>)> {
         scan_link_label_rest(&self.text[start..], &|bytes| {
             let mut line_start = LineStart::new(bytes);
-            let _ = scan_containers(&self.tree, &mut line_start);
+            let _ = self.tree.scan_containers(&mut line_start);
             let bytes_scanned = line_start.bytes_scanned();
 
             let suffix = &bytes[bytes_scanned..];
@@ -1107,7 +1106,7 @@ impl<'a, 'b> FirstPass<'a, 'b> {
                 break;
             }
             let mut line_start = LineStart::new(&bytes[i..]);
-            if self.tree.spine_len() != scan_containers(&self.tree, &mut line_start) {
+            if self.tree.spine_len() != self.tree.scan_containers(&mut line_start) {
                 return None;
             }
             i += line_start.bytes_scanned();

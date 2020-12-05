@@ -215,7 +215,7 @@ impl<'a> Parser<'a> {
                     };
 
                     if let Some((ix, uri, link_type)) = autolink {
-                        let node = scan_nodes_to_ix(&self.tree, next, ix);
+                        let node = self.tree.scan_nodes_to_ix(next, ix);
                         let text_node = self.tree.create_node(Item {
                             start: self.tree[cur_ix].item.start + 1,
                             end: ix - 1,
@@ -240,7 +240,7 @@ impl<'a> Parser<'a> {
                             )
                         });
                         if let Some((span, ix)) = inline_html {
-                            let node = scan_nodes_to_ix(&self.tree, next, ix);
+                            let node = self.tree.scan_nodes_to_ix(next, ix);
                             self.tree[cur_ix].item.body = if !span.is_empty() {
                                 let converted_string =
                                     String::from_utf8(span).expect("invalid utf8");
@@ -333,7 +333,7 @@ impl<'a> Parser<'a> {
                         if let Some((next_ix, url, title)) =
                             self.scan_inline_link(block_text, self.tree[cur_ix].item.end, next)
                         {
-                            let next_node = scan_nodes_to_ix(&self.tree, next, next_ix);
+                            let next_node = self.tree.scan_nodes_to_ix(next, next_ix);
                             if let Some(prev_ix) = prev {
                                 self.tree[prev_ix].next = None;
                             }
@@ -359,8 +359,7 @@ impl<'a> Parser<'a> {
                         } else {
                             // ok, so its not an inline link. maybe it is a reference
                             // to a defined link?
-                            let scan_result = scan_reference(
-                                &self.tree,
+                            let scan_result = self.tree.scan_reference(
                                 block_text,
                                 next,
                                 self.options.contains(Options::ENABLE_FOOTNOTES),
@@ -373,7 +372,7 @@ impl<'a> Parser<'a> {
                                     // it fails in this one. In particular, we won't call
                                     // the broken link callback twice on one reference.
                                     let reference_close_node =
-                                        scan_nodes_to_ix(&self.tree, next, end_ix - 1).unwrap();
+                                        self.tree.scan_nodes_to_ix(next, end_ix - 1).unwrap();
                                     self.tree[reference_close_node].item.body =
                                         ItemBody::MaybeLinkClose(false);
                                     let next_node = self.tree[reference_close_node].next;
@@ -411,12 +410,12 @@ impl<'a> Parser<'a> {
                                 RefScan::Collapsed(..) | RefScan::Failed => {
                                     // No label? maybe it is a shortcut reference
                                     let label_start = self.tree[tos.node].item.end - 1;
-                                    scan_link_label(
-                                        &self.tree,
-                                        &self.text[label_start..self.tree[cur_ix].item.end],
-                                        self.options.contains(Options::ENABLE_FOOTNOTES),
-                                    )
-                                    .map(|(ix, label)| (label, label_start + ix))
+                                    self.tree
+                                        .scan_link_label(
+                                            &self.text[label_start..self.tree[cur_ix].item.end],
+                                            self.options.contains(Options::ENABLE_FOOTNOTES),
+                                        )
+                                        .map(|(ix, label)| (label, label_start + ix))
                                 }
                             };
 
@@ -701,7 +700,7 @@ impl<'a> Parser<'a> {
             }
 
             if c == b'\n' || c == b'\r' {
-                if let Some(node_ix) = scan_nodes_to_ix(&self.tree, node, i + 1) {
+                if let Some(node_ix) = self.tree.scan_nodes_to_ix(node, i + 1) {
                     if self.tree[node_ix].item.start > i {
                         title.push_str(&text[mark..i]);
                         title.push('\n');
@@ -837,7 +836,7 @@ impl<'a> Parser<'a> {
                 &bytes[(ix - 1)..],
                 Some(&|_bytes| {
                     let mut line_start = LineStart::new(bytes);
-                    let _ = scan_containers(&self.tree, &mut line_start);
+                    let _ = self.tree.scan_containers(&mut line_start);
                     line_start.bytes_scanned()
                 }),
             )?;
@@ -853,33 +852,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Returns number of containers scanned.
-pub(crate) fn scan_containers(tree: &Tree<Item>, line_start: &mut LineStart) -> usize {
-    let mut i = 0;
-    for &node_ix in tree.walk_spine() {
-        match tree[node_ix].item.body {
-            ItemBody::BlockQuote => {
-                let save = line_start.clone();
-                if !line_start.scan_blockquote_marker() {
-                    *line_start = save;
-                    break;
-                }
-            }
-            ItemBody::ListItem(indent) => {
-                let save = line_start.clone();
-                if !line_start.scan_space(indent) && !line_start.is_at_eol() {
-                    *line_start = save;
-                    break;
-                }
-            }
-            _ => (),
-        }
-        i += 1;
-    }
-    i
-}
-
-impl<'a> Tree<Item> {
+impl Tree<Item> {
     pub(crate) fn append_text(&mut self, start: usize, end: usize) {
         if end > start {
             if let Some(ix) = self.cur() {
@@ -893,6 +866,96 @@ impl<'a> Tree<Item> {
                 end,
                 body: ItemBody::Text,
             });
+        }
+    }
+
+    /// Returns number of containers scanned.
+    pub(crate) fn scan_containers(&self, line_start: &mut LineStart) -> usize {
+        let mut i = 0;
+        for &node_ix in self.walk_spine() {
+            match self[node_ix].item.body {
+                ItemBody::BlockQuote => {
+                    let save = line_start.clone();
+                    if !line_start.scan_blockquote_marker() {
+                        *line_start = save;
+                        break;
+                    }
+                }
+                ItemBody::ListItem(indent) => {
+                    let save = line_start.clone();
+                    if !line_start.scan_space(indent) && !line_start.is_at_eol() {
+                        *line_start = save;
+                        break;
+                    }
+                }
+                _ => (),
+            }
+            i += 1;
+        }
+        i
+    }
+
+    /// Skips forward within a block to a node which spans (ends inclusive) the given
+    /// index into the source.
+    fn scan_nodes_to_ix(&self, mut node: Option<TreeIndex>, ix: usize) -> Option<TreeIndex> {
+        while let Some(node_ix) = node {
+            if self[node_ix].item.end <= ix {
+                node = self[node_ix].next;
+            } else {
+                break;
+            }
+        }
+        node
+    }
+
+    /// Scans an inline link label, which cannot be interrupted.
+    /// Returns number of bytes (including brackets) and label on success.
+    fn scan_link_label<'a>(
+        &self,
+        text: &'a str,
+        allow_footnote_refs: bool,
+    ) -> Option<(usize, ReferenceLabel<'a>)> {
+        let bytes = text.as_bytes();
+        if bytes.len() < 2 || bytes[0] != b'[' {
+            return None;
+        }
+        let linebreak_handler = |bytes: &[u8]| {
+            let mut line_start = LineStart::new(bytes);
+            let _ = self.scan_containers(&mut line_start);
+            Some(line_start.bytes_scanned())
+        };
+        let pair = if allow_footnote_refs && b'^' == bytes[1] {
+            let (byte_index, cow) = scan_link_label_rest(&text[2..], &linebreak_handler)?;
+            (byte_index + 2, ReferenceLabel::Footnote(cow))
+        } else {
+            let (byte_index, cow) = scan_link_label_rest(&text[1..], &linebreak_handler)?;
+            (byte_index + 1, ReferenceLabel::Link(cow))
+        };
+        Some(pair)
+    }
+
+    fn scan_reference<'a>(
+        &self,
+        text: &'a str,
+        cur: Option<TreeIndex>,
+        allow_footnote_refs: bool,
+    ) -> RefScan<'a> {
+        let cur_ix = match cur {
+            None => return RefScan::Failed,
+            Some(cur_ix) => cur_ix,
+        };
+        let start = self[cur_ix].item.start;
+        let tail = &text.as_bytes()[start..];
+
+        if tail.starts_with(b"[]") {
+            let closing_node = self[cur_ix].next.unwrap();
+            RefScan::Collapsed(self[closing_node].next)
+        } else if let Some((ix, ReferenceLabel::Link(label))) =
+            self.scan_link_label(&text[start..], allow_footnote_refs)
+        {
+            RefScan::LinkLabel(label, start + ix)
+        } else {
+            RefScan::Failed
         }
     }
 }
@@ -1016,74 +1079,6 @@ enum RefScan<'a> {
     // contains next node index
     Collapsed(Option<TreeIndex>),
     Failed,
-}
-
-/// Skips forward within a block to a node which spans (ends inclusive) the given
-/// index into the source.
-fn scan_nodes_to_ix(
-    tree: &Tree<Item>,
-    mut node: Option<TreeIndex>,
-    ix: usize,
-) -> Option<TreeIndex> {
-    while let Some(node_ix) = node {
-        if tree[node_ix].item.end <= ix {
-            node = tree[node_ix].next;
-        } else {
-            break;
-        }
-    }
-    node
-}
-
-/// Scans an inline link label, which cannot be interrupted.
-/// Returns number of bytes (including brackets) and label on success.
-fn scan_link_label<'text, 'tree>(
-    tree: &'tree Tree<Item>,
-    text: &'text str,
-    allow_footnote_refs: bool,
-) -> Option<(usize, ReferenceLabel<'text>)> {
-    let bytes = &text.as_bytes();
-    if bytes.len() < 2 || bytes[0] != b'[' {
-        return None;
-    }
-    let linebreak_handler = |bytes: &[u8]| {
-        let mut line_start = LineStart::new(bytes);
-        let _ = scan_containers(tree, &mut line_start);
-        Some(line_start.bytes_scanned())
-    };
-    let pair = if allow_footnote_refs && b'^' == bytes[1] {
-        let (byte_index, cow) = scan_link_label_rest(&text[2..], &linebreak_handler)?;
-        (byte_index + 2, ReferenceLabel::Footnote(cow))
-    } else {
-        let (byte_index, cow) = scan_link_label_rest(&text[1..], &linebreak_handler)?;
-        (byte_index + 1, ReferenceLabel::Link(cow))
-    };
-    Some(pair)
-}
-
-fn scan_reference<'a, 'b>(
-    tree: &'a Tree<Item>,
-    text: &'b str,
-    cur: Option<TreeIndex>,
-    allow_footnote_refs: bool,
-) -> RefScan<'b> {
-    let cur_ix = match cur {
-        None => return RefScan::Failed,
-        Some(cur_ix) => cur_ix,
-    };
-    let start = tree[cur_ix].item.start;
-    let tail = &text.as_bytes()[start..];
-
-    if tail.starts_with(b"[]") {
-        let closing_node = tree[cur_ix].next.unwrap();
-        RefScan::Collapsed(tree[closing_node].next)
-    } else if let Some((ix, ReferenceLabel::Link(label))) =
-        scan_link_label(tree, &text[start..], allow_footnote_refs)
-    {
-        RefScan::LinkLabel(label, start + ix)
-    } else {
-        RefScan::Failed
-    }
 }
 
 #[derive(Clone, Default)]

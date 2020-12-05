@@ -72,7 +72,9 @@ impl<T: Default> Tree<T> {
             cur: None,
         }
     }
+}
 
+impl<T> Tree<T> {
     /// Returns the index of the element currently in focus.
     pub(crate) fn cur(&self) -> Option<TreeIndex> {
         self.cur
