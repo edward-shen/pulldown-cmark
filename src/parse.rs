@@ -1301,7 +1301,7 @@ impl<'a> Iterator for OffsetIter<'a> {
                 let node = self.inner.tree[cur_ix];
                 let item = node.item;
                 let event = item_to_event(item, self.inner.text, &self.inner.allocs);
-                if let Event::Start(..) = event {
+                if let Event::Start(_) = event {
                     self.inner.tree.push();
                 } else {
                     self.inner.tree.next_sibling(cur_ix);

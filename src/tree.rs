@@ -64,7 +64,7 @@ impl<T: Default> Tree<T> {
         nodes.push(Node {
             child: None,
             next: None,
-            item: <T as Default>::default(),
+            item: T::default(),
         });
         Tree {
             nodes,
